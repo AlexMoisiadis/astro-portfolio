@@ -1,0 +1,5 @@
+/* styles/globals.css */
+@import "tailwindcss";
+
+/* your custom styles can follow */
+:root { color-scheme: dark; }
