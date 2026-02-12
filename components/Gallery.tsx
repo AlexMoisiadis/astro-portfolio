@@ -2,20 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-
-export type GalleryItem = {
-    id: string;
-    title?: string;
-    width?: number;
-    height?: number;
-    thumbUrl: string;
-    originalUrl: string;
-    capturedAt?: string;
-    camera?: string;
-    focalLength?: number;
-    exposureTime?: string;
-    iso?: number;
-};
+import type { GalleryItem } from '@/types/gallery.types';  // <-- local type import
 
 export default function Gallery({ items }: { items: GalleryItem[] }) {
     return (

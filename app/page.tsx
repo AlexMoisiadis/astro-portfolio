@@ -1,13 +1,14 @@
-import Gallery, { type GalleryItem } from '@/components/Gallery';
+// app/page.tsx
+import Gallery from '@/components/Gallery';              // <-- add this
+import type { GalleryItem } from '@/types/gallery.types';
 import { getBaseUrl } from '@/lib/get-base-url';
 
 export default async function Page() {
   let items: GalleryItem[] = [];
 
   try {
-    const base = await getBaseUrl(); // <-- await here
+    const base = await getBaseUrl();
     const res = await fetch(`${base}/api/portfolio`, { cache: 'no-store' });
-
     if (res.ok) {
       const data = (await res.json()) as { items: GalleryItem[] };
       items = Array.isArray(data?.items) ? data.items : [];
