@@ -1,46 +1,29 @@
-// app/api/portfolio/route.ts
 import { NextResponse } from 'next/server';
 import { immich } from '@/lib/immich';
 
-/**
- * Minimal types for just what we use from Immich.
- * If Immich changes its API or you need more fields, extend these.
- */
-
-type AlbumListItem = {
-    id: string;
-    albumName?: string | null;
-};
-
-type AlbumAssetRef = {
-    assetId: string; // the id of the asset in this album
-};
-
-type AlbumDetail = {
-    id: string;
-    assets?: AlbumAssetRef[];
-};
-
+/** Minimal types for what we use */
+type AlbumListItem = { id: string; albumName?: string | null };
 type ExifInfo = {
     imageWidth?: number | null;
     imageHeight?: number | null;
     imageName?: string | null;
     cameraModel?: string | null;
     focalLength?: number | null;
-    exposureTime?: string | null; // Immich returns as string (e.g., "120")
+    exposureTime?: string | null;
     iso?: number | null;
 };
-
 type SearchAsset = {
     id: string;
     fileCreatedAt?: string | null;
     originalFileName?: string | null;
     exifInfo?: ExifInfo | null;
 };
+/** Different Immich versions may return `assets` as an array or an object with `items` */
+type SearchArrayShape = { assets?: SearchAsset[] | null };
+type SearchObjectShape = { assets?: { items?: SearchAsset[] | null } | null };
 
-type SearchMetadataResponse = {
-    assets?: SearchAsset[];
-};
+type AlbumAssetRef = { assetId: string };
+type AlbumDetail = { id: string; assets?: AlbumAssetRef[] | null };
 
 type GalleryItem = {
     id: string;
@@ -56,6 +39,32 @@ type GalleryItem = {
     originalUrl: string;
 };
 
+function toItems(baseUrl: string, assets: SearchAsset[] | undefined | null): GalleryItem[] {
+    const out: GalleryItem[] = [];
+    if (!assets || !Array.isArray(assets)) return out;
+
+    for (const asset of assets) {
+        const exif = asset.exifInfo ?? {};
+        const width = exif.imageWidth ?? undefined;
+        const height = exif.imageHeight ?? undefined;
+
+        out.push({
+            id: asset.id,
+            width: typeof width === 'number' ? width : undefined,
+            height: typeof height === 'number' ? height : undefined,
+            capturedAt: asset.fileCreatedAt ?? undefined,
+            title: exif.imageName ?? asset.originalFileName ?? undefined,
+            camera: exif.cameraModel ?? undefined,
+            focalLength: typeof exif.focalLength === 'number' ? exif.focalLength : undefined,
+            exposureTime: exif.exposureTime ?? undefined,
+            iso: typeof exif.iso === 'number' ? exif.iso : undefined,
+            thumbUrl: `/api/image/${asset.id}/thumbnail`,
+            originalUrl: `/api/image/${asset.id}/original`, // <-- use proxy
+        });
+    }
+    return out;
+}
+
 export async function GET() {
     try {
         const baseUrl = process.env.IMMICH_BASE_URL;
@@ -63,72 +72,92 @@ export async function GET() {
             return NextResponse.json({ error: 'IMMICH_BASE_URL not set' }, { status: 500 });
         }
 
-        // 1) Resolve album id either from ENV or by name lookup
+        // Resolve album
         const albumIdFromEnv = process.env.IMMICH_PORTFOLIO_ALBUM_ID?.trim();
-        const albumName = (process.env.IMMICH_PORTFOLIO_ALBUM_NAME || 'Portfolio').trim().toLowerCase();
+        const albumName = (process.env.IMMICH_PORTFOLIO_ALBUM_NAME || 'Portfolio')
+            .trim()
+            .toLowerCase();
 
         let albumId: string | undefined = albumIdFromEnv;
+        console.log('[portfolio] env albumId:', albumIdFromEnv, 'env albumName:', albumName);
 
         if (!albumId) {
             const albums = await immich<AlbumListItem[]>('/albums');
-
+            console.log('[portfolio] /albums returned:', albums.length, 'albums');
             const found = albums.find(
                 (a) => a.albumName && a.albumName.trim().toLowerCase() === albumName,
             );
             albumId = found?.id;
+            console.log('[portfolio] matched album id by name:', albumId);
         }
 
         if (!albumId) {
-            // No album found—return empty gallery instead of throwing
+            console.log('[portfolio] No album match. Returning empty list.');
             return NextResponse.json({ items: [] as GalleryItem[] }, { status: 200 });
         }
 
-        // 2) Fetch album detail to get asset IDs
+        // ---- Attempt #1: Search by albumIds (recommended by Immich maintainers)
+        const size = 250;
+        const searchBody = { albumIds: [albumId], size };
+
+        // We don't know exact shape -> type as union of possible shapes
+        const result = await immich<SearchArrayShape & SearchObjectShape>('/search/metadata', {
+            method: 'POST',
+            body: JSON.stringify(searchBody),
+        });
+
+        // Normalize potential shapes: assets[] OR assets.items[]
+        const assetsArray =
+            Array.isArray((result as SearchArrayShape).assets)
+                ? (result as SearchArrayShape).assets
+                : (result as SearchObjectShape).assets?.items;
+
+        const searchCount = Array.isArray(assetsArray) ? assetsArray.length : 0;
+        console.log('[portfolio] search/metadata albumIds size:', searchCount);
+
+        if (searchCount > 0) {
+            const items = toItems(baseUrl, assetsArray);
+            console.log('[portfolio] items prepared (search):', items.length);
+            return NextResponse.json({ items });
+        }
+
+        // ---- Attempt #2 (fallback): album detail -> asset IDs -> search by ids
+        // Some installs might not return assets via albumIds filter.
         const album = await immich<AlbumDetail>(`/albums/${albumId}`);
         const assetIds = (album.assets ?? []).map((x) => x.assetId).filter(Boolean);
+        console.log('[portfolio] fallback album assets count:', assetIds.length);
 
         if (assetIds.length === 0) {
             return NextResponse.json({ items: [] as GalleryItem[] }, { status: 200 });
         }
 
-        // 3) Fetch asset metadata in chunks via the search endpoint
+        // Chunk search by ids
         const pageSize = 200;
-        const items: GalleryItem[] = [];
-
+        let all: SearchAsset[] = [];
         for (let i = 0; i < assetIds.length; i += pageSize) {
             const chunk = assetIds.slice(i, i + pageSize);
-
-            const result = await immich<SearchMetadataResponse>('/search/metadata', {
+            const res2 = await immich<SearchArrayShape & SearchObjectShape>('/search/metadata', {
                 method: 'POST',
-                body: JSON.stringify({ ids: chunk, size: 250 }),
+                body: JSON.stringify({ ids: chunk, size: pageSize }),
             });
+            const arr2 =
+                Array.isArray((res2 as SearchArrayShape).assets)
+                    ? (res2 as SearchArrayShape).assets
+                    : (res2 as SearchObjectShape).assets?.items;
 
-            for (const asset of result.assets ?? []) {
-                const exif = asset.exifInfo ?? {};
+            const n = Array.isArray(arr2) ? arr2.length : 0;
+            console.log('[portfolio] fallback chunk requested:', chunk.length, 'returned:', n);
 
-                const width = exif.imageWidth ?? undefined;
-                const height = exif.imageHeight ?? undefined;
-
-                items.push({
-                    id: asset.id,
-                    width: typeof width === 'number' ? width : undefined,
-                    height: typeof height === 'number' ? height : undefined,
-                    capturedAt: asset.fileCreatedAt ?? undefined,
-                    title: exif.imageName ?? asset.originalFileName ?? undefined,
-                    camera: exif.cameraModel ?? undefined,
-                    focalLength: typeof exif.focalLength === 'number' ? exif.focalLength : undefined,
-                    exposureTime: exif.exposureTime ?? undefined,
-                    iso: typeof exif.iso === 'number' ? exif.iso : undefined,
-                    // Use the configured base; Next.js Image allowlist must include this host
-                    thumbUrl: `${baseUrl}/api/assets/${asset.id}/thumbnail`,
-                    originalUrl: `${baseUrl}/api/assets/${asset.id}/original`,
-                });
+            if (Array.isArray(arr2) && arr2.length) {
+                all = all.concat(arr2);
             }
         }
 
+        const items = toItems(baseUrl, all);
+        console.log('[portfolio] items prepared (fallback):', items.length);
         return NextResponse.json({ items });
     } catch (e) {
-        console.error(e);
-        return NextResponse.json({ error: 'Upstream error' }, { status: 502 });
+        console.error('[/api/portfolio] error:', e);
+        return NextResponse.json({ items: [] as GalleryItem[] }, { status: 200 });
     }
 }
