@@ -1,11 +1,7 @@
-// app/(photo)/[id]/metadata/route.ts
+// app/api/photo/[id]/metadata/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { immich } from '@/lib/immich';
 
-/**
- * Minimal types for the Immich asset response, limited to fields we use.
- * Extend if you need more.
- */
 type ExifInfo = {
     imageWidth?: number | null;
     imageHeight?: number | null;
@@ -13,7 +9,7 @@ type ExifInfo = {
     cameraModel?: string | null;
     lensModel?: string | null;
     focalLength?: number | null;
-    exposureTime?: string | null; // commonly a string in Immich
+    exposureTime?: string | null;
     iso?: number | null;
     temperature?: number | null;
 };
@@ -25,28 +21,36 @@ type AssetResponse = {
     exifInfo?: ExifInfo | null;
 };
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export async function GET(
+    _req: NextRequest,
+    ctx: { params: Promise<{ id: string }> } // <-- params is a Promise in Next 16
+) {
     try {
-        const baseUrl = process.env.IMMICH_BASE_URL;
-        if (!baseUrl) {
-            return NextResponse.json({ error: 'IMMICH_BASE_URL not set' }, { status: 500 });
+        const { id } = await ctx.params; // <-- unwrap
+        const assetId = decodeURIComponent(id ?? '');
+
+        if (!UUID_RE.test(assetId)) {
+            return NextResponse.json(
+                { error: 'Bad id (must be a UUID)' },
+                { status: 400 }
+            );
         }
 
-        const asset = await immich<AssetResponse>(`/assets/${params.id}`);
+        const baseUrl = process.env.IMMICH_BASE_URL!;
+        const asset = await immich<AssetResponse>(`/assets/${assetId}`);
 
         if (!asset || !asset.id) {
             return NextResponse.json({ error: 'Not found' }, { status: 404 });
         }
 
         const exif = asset.exifInfo ?? {};
-
-        const width = exif.imageWidth ?? undefined;
-        const height = exif.imageHeight ?? undefined;
-
         const meta = {
             id: asset.id,
-            width: typeof width === 'number' ? width : undefined,
-            height: typeof height === 'number' ? height : undefined,
+            width: typeof exif.imageWidth === 'number' ? exif.imageWidth : undefined,
+            height: typeof exif.imageHeight === 'number' ? exif.imageHeight : undefined,
             capturedAt: asset.fileCreatedAt ?? undefined,
             title: exif.imageName ?? asset.originalFileName ?? undefined,
             camera: exif.cameraModel ?? undefined,
@@ -55,19 +59,16 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
             exposureTime: exif.exposureTime ?? undefined,
             iso: typeof exif.iso === 'number' ? exif.iso : undefined,
             sensorTemp: typeof exif.temperature === 'number' ? exif.temperature : undefined,
-
-            // Your own optional/custom fields; keep undefined unless you have a source
-            integration: undefined as string | undefined,
-            mount: undefined as string | undefined,
-            filters: undefined as string | undefined,
-
-            // Original image URL served by Immich
             originalUrl: `${baseUrl}/api/assets/${asset.id}/original`,
+            integration: undefined,
+            mount: undefined,
+            filters: undefined,
         };
 
         return NextResponse.json(meta);
-    } catch (e) {
-        console.error(e);
+    } catch (err) {
+        // Surface the Immich error body for easier diagnosis in logs
+        console.error('[metadata] error:', err);
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 }
