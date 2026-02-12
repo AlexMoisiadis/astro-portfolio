@@ -1,16 +1,18 @@
 import Gallery, { type GalleryItem } from '@/components/Gallery';
+import { getBaseUrl } from '@/lib/get-base-url';
 
 export default async function Page() {
   let items: GalleryItem[] = [];
 
   try {
-    const res = await fetch('/api/portfolio', { cache: 'no-store' });
-    if (!res.ok) {
-      // Log for server console; render a friendly message below
-      console.error('GET /api/portfolio failed:', res.status);
-    } else {
+    const base = await getBaseUrl(); // <-- await here
+    const res = await fetch(`${base}/api/portfolio`, { cache: 'no-store' });
+
+    if (res.ok) {
       const data = (await res.json()) as { items: GalleryItem[] };
       items = Array.isArray(data?.items) ? data.items : [];
+    } else {
+      console.error('GET /api/portfolio failed:', res.status);
     }
   } catch (err) {
     console.error('GET /api/portfolio error:', err);
@@ -21,7 +23,6 @@ export default async function Page() {
       <p className="mb-6 text-neutral-300">
         A selection of deep-sky images. Click any frame to see details.
       </p>
-
       {items.length > 0 ? (
         <Gallery items={items} />
       ) : (
