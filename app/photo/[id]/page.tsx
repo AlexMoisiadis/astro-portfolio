@@ -2,8 +2,10 @@ import Image from 'next/image';
 import BackButton from '@/components/BackButton';
 import TechPanel from '@/components/TechPanel';
 import { getBaseUrl } from '@/lib/get-base-url';
+import { pickDisplayTitle, stripExtension } from '@/lib/strings'; // <-- added
+import type { PhotoMeta } from '@/types/gallery.types';
 
-async function getMeta(id: string) {
+async function getMeta(id: string): Promise<PhotoMeta | null> {
   const base = await getBaseUrl();
   const res = await fetch(`${base}/api/photo/${id}/metadata`, {
     cache: 'no-store',
@@ -46,6 +48,15 @@ export default async function PhotoPage({
     );
   }
 
+  // --- Normalize the title for display: EXIF/metadata title -> filename (no ext) -> 'Untitled'
+  const filenameFromUrl =
+    typeof meta.originalUrl === 'string'
+      ? meta.originalUrl.split('/').pop()
+      : undefined;
+  const displayTitle =
+    pickDisplayTitle(meta.title, stripExtension(filenameFromUrl ?? undefined), 'Untitled') ??
+    'Untitled';
+
   return (
     <div className="animate-fade-in">
       <BackButton />
@@ -56,7 +67,7 @@ export default async function PhotoPage({
           <div className="overflow-hidden rounded-lg bg-neutral-900 shadow-2xl shadow-black/50">
             <Image
               src={`/api/image/${id}/preview`}
-              alt={meta.title ?? 'Astro photo'}
+              alt={displayTitle}
               width={meta.width ?? 2048}
               height={meta.height ?? 1365}
               className="w-full h-auto"
@@ -72,7 +83,7 @@ export default async function PhotoPage({
             {/* Title & Date */}
             <div>
               <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                {meta.title ?? 'Untitled'}
+                {displayTitle}
               </h1>
               {meta.capturedAt && (
                 <p className="mt-2 text-sm text-neutral-500">
@@ -88,7 +99,7 @@ export default async function PhotoPage({
             {/* Tech Panel */}
             <TechPanel
               tech={{
-                title: meta.title,
+                title: displayTitle, // <-- use normalized title here too
                 description: meta.description,
                 camera: meta.camera,
                 lens: meta.lens,

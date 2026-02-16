@@ -1,14 +1,15 @@
+// app/portfolio/route.ts
 import { NextResponse } from 'next/server';
 import { immich } from '@/lib/immich';
 import type {
     ImmichAlbumListItem,
-    ImmichAlbumDetail,
     ImmichAsset,
     ImmichSearchArrayShape,
     ImmichSearchObjectShape,
 } from '@/types/immich.types';
 import type { GalleryItem } from '@/types/gallery.types';
 import type { PortfolioSearchResponse } from './route.types';
+import { pickDisplayTitle } from '@/lib/strings';  // <-- import
 
 export async function GET() {
     try {
@@ -16,7 +17,9 @@ export async function GET() {
         if (!baseUrl) return NextResponse.json({ error: 'IMMICH_BASE_URL not set' }, { status: 500 });
 
         const albumIdFromEnv = process.env.IMMICH_PORTFOLIO_ALBUM_ID?.trim();
-        const albumName = (process.env.IMMICH_PORTFOLIO_ALBUM_NAME || 'Portfolio').trim().toLowerCase();
+        const albumName = (process.env.IMMICH_PORTFOLIO_ALBUM_NAME || 'Portfolio')
+            .trim()
+            .toLowerCase();
 
         let albumId: string | undefined = albumIdFromEnv;
         console.log('[portfolio] env albumId:', albumIdFromEnv, 'env albumName:', albumName);
@@ -31,7 +34,6 @@ export async function GET() {
 
         if (!albumId) return NextResponse.json({ items: [] as GalleryItem[] }, { status: 200 });
 
-        // Prefer the search path filtered by albumIds
         const result = await immich<PortfolioSearchResponse>('/search/metadata', {
             method: 'POST',
             body: JSON.stringify({ albumIds: [albumId], size: 250 }),
@@ -52,12 +54,16 @@ export async function GET() {
                 width: typeof width === 'number' ? width : undefined,
                 height: typeof height === 'number' ? height : undefined,
                 capturedAt: asset.fileCreatedAt ?? undefined,
-                title: exif.imageName ?? asset.originalFileName ?? undefined,
+
+                // Title: EXIF first, otherwise filename without extension
+                title: pickDisplayTitle(exif.imageName, asset.originalFileName, 'Untitled'),
+
                 camera: exif.cameraModel ?? undefined,
                 focalLength: typeof exif.focalLength === 'number' ? exif.focalLength : undefined,
                 exposureTime: exif.exposureTime ?? undefined,
                 iso: typeof exif.iso === 'number' ? exif.iso : undefined,
-                // IMPORTANT: serve via your proxy endpoints so the browser doesn't need the API key
+
+                // Proxy endpoints so the browser doesn’t need the API key
                 thumbUrl: `/api/image/${asset.id}/thumbnail`,
                 originalUrl: `/api/image/${asset.id}/original`,
             };
