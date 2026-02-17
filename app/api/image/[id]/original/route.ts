@@ -1,4 +1,6 @@
 import type { NextRequest } from 'next/server';
+import { immichFetch } from '@/lib/immich';
+import { CACHE_REVALIDATE_IMAGE } from '@/lib/constants';
 
 export async function GET(
     _req: NextRequest,
@@ -7,14 +9,7 @@ export async function GET(
     const { id } = await ctx.params;
     if (!id) return new Response('Missing id', { status: 400 });
 
-    const base = process.env.IMMICH_BASE_URL!;
-    const key = process.env.IMMICH_API_KEY!;
-
-    const upstream = `${base}/api/assets/${encodeURIComponent(id)}/original`;
-    const res = await fetch(upstream, {
-        headers: { 'x-api-key': key },
-        cache: 'no-store',
-    });
+    const res = await immichFetch(`/assets/${encodeURIComponent(id)}/original`, {}, CACHE_REVALIDATE_IMAGE);
 
     if (!res.ok || !res.body) {
         const text = await res.text().catch(() => '');
