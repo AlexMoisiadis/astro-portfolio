@@ -1,6 +1,7 @@
 // next.config.ts
 import type { NextConfig } from 'next';
 import type { RemotePattern } from 'next/dist/shared/lib/image-config';
+import { CACHE_REVALIDATE_IMAGE } from './lib/constants';
 
 const remotePatterns: RemotePattern[] = [];
 
@@ -16,8 +17,12 @@ if (process.env.IMMICH_BASE_URL) {
 }
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   images: {
     remotePatterns,
+    // How long (in seconds) the Next.js image optimizer caches optimized images.
+    // In development (`next dev`) this is ignored — images are always revalidated.
+    minimumCacheTTL: CACHE_REVALIDATE_IMAGE,
   },
 };
 

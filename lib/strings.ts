@@ -77,6 +77,18 @@ export function toTitleCaseConservative(s: string): string {
 }
 
 /**
+ * Convert a display title to a URL-friendly slug.
+ * "Southern Pleiades" → "southern-pleiades"
+ * "Rosette Nebula (NGC 2237)" → "rosette-nebula-ngc-2237"
+ */
+export function toSlug(title: string): string {
+    return title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')   // replace non-alphanumeric runs with hyphens
+        .replace(/^-+|-+$/g, '');       // trim leading/trailing hyphens
+}
+
+/**
  * Make a display-friendly title:
  * 1) Prefer EXIF-provided title if present.
  * 2) Otherwise fall back to filename without extension.

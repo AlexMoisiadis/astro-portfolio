@@ -1,6 +1,7 @@
 // types/gallery.types.ts
 export type GalleryItem = {
     id: string;
+    slug: string;
     width?: number;
     height?: number;
     capturedAt?: string;

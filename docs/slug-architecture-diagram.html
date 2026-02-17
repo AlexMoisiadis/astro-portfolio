@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Slug-Based API Architecture — Astro Portfolio</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0a0a0a; color: #e5e5e5; padding: 40px 20px; line-height: 1.6; }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 28px; text-align: center; margin-bottom: 8px; color: #fff; }
+    .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 40px; }
+    h2 { font-size: 20px; margin: 40px 0 16px; color: #a5b4fc; border-bottom: 1px solid #333; padding-bottom: 8px; }
+    h3 { font-size: 16px; margin: 24px 0 8px; color: #c4b5fd; }
+    p, li { font-size: 14px; color: #ccc; }
+    ul { padding-left: 20px; margin: 8px 0; }
+    li { margin: 4px 0; }
+    code { background: #1e1e2e; color: #a5b4fc; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+
+    /* Diagram styles */
+    .diagram { background: #111; border: 1px solid #333; border-radius: 12px; padding: 32px 24px; margin: 24px 0; overflow-x: auto; }
+    .flow { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+    .box { background: #1a1a2e; border: 2px solid #333; border-radius: 10px; padding: 14px 18px; text-align: center; min-width: 120px; position: relative; }
+    .box.browser { border-color: #6366f1; background: #1e1b4b; }
+    .box.nextjs { border-color: #22d3ee; background: #0c2e3a; }
+    .box.api { border-color: #f59e0b; background: #2a1f05; }
+    .box.immich { border-color: #10b981; background: #052e1e; }
+    .box .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 4px; }
+    .box .name { font-size: 14px; font-weight: 600; color: #fff; }
+    .box .detail { font-size: 11px; color: #aaa; margin-top: 4px; }
+    .arrow { color: #555; font-size: 24px; flex-shrink: 0; }
+    .arrow-label { font-size: 10px; color: #888; text-align: center; max-width: 140px; }
+    .arrow-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+
+    /* Key point callouts */
+    .callout { background: #1a2332; border-left: 3px solid #6366f1; padding: 12px 16px; margin: 16px 0; border-radius: 0 8px 8px 0; }
+    .callout.green { border-left-color: #10b981; background: #0a2018; }
+    .callout.amber { border-left-color: #f59e0b; background: #1a1505; }
+    .callout strong { color: #fff; }
+
+    /* Comparison table */
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #222; font-size: 13px; }
+    th { color: #a5b4fc; font-weight: 600; background: #111; }
+    td { color: #ccc; }
+    .old { color: #f87171; text-decoration: line-through; }
+    .new { color: #34d399; }
+
+    /* Section divider */
+    .divider { height: 1px; background: linear-gradient(to right, transparent, #333, transparent); margin: 48px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔭 Astro Portfolio — Slug-Based Architecture</h1>
+    <p class="subtitle">How photo URLs work without ever exposing Immich asset IDs to the browser</p>
+
+    <!-- ============================================================ -->
+    <h2>1. The Big Picture</h2>
+    <p>Instead of showing ugly UUIDs in the URL, we use human-readable <strong>slugs</strong> (like <code>rosette-nebula</code>). The slug is resolved to the real ID <em>only on the server</em>.</p>
+
+    <div class="diagram">
+      <div class="flow">
+        <div class="box browser">
+          <div class="label">Browser</div>
+          <div class="name">You</div>
+          <div class="detail">Sees only slugs</div>
+        </div>
+
+        <div class="arrow-group">
+          <div class="arrow">→</div>
+          <div class="arrow-label"><code>/photo/rosette-nebula</code></div>
+        </div>
+
+        <div class="box nextjs">
+          <div class="label">Next.js</div>
+          <div class="name">Photo Page</div>
+          <div class="detail">Server Component</div>
+        </div>
+
+        <div class="arrow-group">
+          <div class="arrow">→</div>
+          <div class="arrow-label">Lookup: slug → UUID</div>
+        </div>
+
+        <div class="box api">
+          <div class="label">API Route</div>
+          <div class="name">Lookup</div>
+          <div class="detail">/api/portfolio/lookup</div>
+        </div>
+
+        <div class="arrow-group">
+          <div class="arrow">→</div>
+          <div class="arrow-label">Fetch with UUID</div>
+        </div>
+
+        <div class="box immich">
+          <div class="label">Backend</div>
+          <div class="name">Immich</div>
+          <div class="detail">Photo storage</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>Key insight:</strong> The browser never sees the UUID. It only knows about slugs like <code>rosette-nebula</code>. The UUID (<code>c3629bd3-6919-...</code>) exists only in server-to-server communication.
+    </div>
+
+    <!-- ============================================================ -->
+    <div class="divider"></div>
+    <h2>2. How an Image Loads (Step by Step)</h2>
+    <p>When you click a photo in the gallery, here's what happens:</p>
+
+    <div class="diagram">
+      <!-- Step 1 -->
+      <h3 style="color: #6366f1; margin-bottom: 12px;">Step 1: Browser requests the page</h3>
+      <div class="flow">
+        <div class="box browser">
+          <div class="name">Browser</div>
+        </div>
+        <div class="arrow-group">
+          <div class="arrow">→</div>
+          <div class="arrow-label"><code>/photo/rosette-nebula</code></div>
+        </div>
+        <div class="box nextjs">
+          <div class="name">Photo Page</div>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <h3 style="color: #f59e0b; margin-top: 24px; margin-bottom: 12px;">Step 2: Server resolves slug → UUID (hidden from browser)</h3>
+      <div class="flow">
+        <div class="box nextjs">
+          <div class="name">Photo Page</div>
+        </div>
+        <div class="arrow-group">
+          <div class="arrow">→</div>
+          <div class="arrow-label"><code>?slug=rosette-nebula</code></div>
+        </div>
+        <div class="box api">
+          <div class="name">Lookup API</div>
+          <div class="detail">Returns: UUID</div>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <h3 style="color: #22d3ee; margin-top: 24px; margin-bottom: 12px;">Step 3: Browser loads the image (using slug, NOT UUID)</h3>
+      <div class="flow">
+        <div class="box browser">
+          <div class="name">Browser</div>
+        </div>
+        <div class="arrow-group">
+          <div class="arrow">→</div>
+          <div class="arrow-label"><code>/api/image/by-slug/<br>rosette-nebula/preview</code></div>
+        </div>
+        <div class="box api">
+          <div class="name">Slug Image API</div>
+          <div class="detail">Resolves slug → UUID</div>
+        </div>
+        <div class="arrow-group">
+          <div class="arrow">→</div>
+          <div class="arrow-label">UUID (server only)</div>
+        </div>
+        <div class="box immich">
+          <div class="name">Immich</div>
+          <div class="detail">Returns image bytes</div>
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <h3 style="color: #10b981; margin-top: 24px; margin-bottom: 12px;">Step 4: Image bytes flow back</h3>
+      <div class="flow">
+        <div class="box immich">
+          <div class="name">Immich</div>
+        </div>
+        <div class="arrow-group">
+          <div class="arrow">→</div>
+          <div class="arrow-label">JPEG bytes</div>
+        </div>
+        <div class="box api">
+          <div class="name">Slug Image API</div>
+        </div>
+        <div class="arrow-group">
+          <div class="arrow">→</div>
+          <div class="arrow-label">JPEG bytes</div>
+        </div>
+        <div class="box browser">
+          <div class="name">Browser</div>
+          <div class="detail">Shows the photo! 🖼️</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <div class="divider"></div>
+    <h2>3. Before & After Comparison</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>What</th>
+          <th>Before (Old)</th>
+          <th>After (New)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Page URL</td>
+          <td class="old"><code>/photo/c3629bd3-6919-4126-98f7-aae8866a348e</code></td>
+          <td class="new"><code>/photo/rosette-nebula</code></td>
+        </tr>
+        <tr>
+          <td>Image request</td>
+          <td class="old"><code>/api/image/c3629bd3-.../preview</code></td>
+          <td class="new"><code>/api/image/by-slug/rosette-nebula/preview</code></td>
+        </tr>
+        <tr>
+          <td>Download link</td>
+          <td class="old"><code>/api/image/c3629bd3-.../original</code></td>
+          <td class="new"><code>/api/image/by-slug/rosette-nebula/original</code></td>
+        </tr>
+        <tr>
+          <td>Gallery thumbnail</td>
+          <td class="old"><code>/api/image/c3629bd3-.../thumbnail</code></td>
+          <td class="new"><code>/api/image/by-slug/rosette-nebula/thumbnail</code></td>
+        </tr>
+        <tr>
+          <td>UUID visible to user?</td>
+          <td class="old">Yes ❌</td>
+          <td class="new">No ✅</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ============================================================ -->
+    <div class="divider"></div>
+    <h2>4. Route Map</h2>
+    <p>Here are all the API routes and what they do:</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Route</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>/api/portfolio</code></td>
+          <td>Returns all photos with slugs, titles, and slug-based image URLs</td>
+        </tr>
+        <tr>
+          <td><code>/api/portfolio/lookup?slug=...</code></td>
+          <td>Converts a slug → Immich UUID (server-side only)</td>
+        </tr>
+        <tr>
+          <td><code>/api/image/by-slug/[slug]/thumbnail</code></td>
+          <td>Returns thumbnail image (small, for gallery grid)</td>
+        </tr>
+        <tr>
+          <td><code>/api/image/by-slug/[slug]/preview</code></td>
+          <td>Returns preview image (medium, for detail page)</td>
+        </tr>
+        <tr>
+          <td><code>/api/image/by-slug/[slug]/original</code></td>
+          <td>Returns original full-res image (for download)</td>
+        </tr>
+        <tr>
+          <td><code>/api/photo/[uuid]/metadata</code></td>
+          <td>Returns EXIF/camera data (called server-side by photo page)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout green">
+      <strong>Security benefit:</strong> Since UUIDs are never exposed to the browser, an attacker cannot enumerate or guess Immich asset IDs to try to access photos outside the portfolio album.
+    </div>
+
+    <div class="callout amber">
+      <strong>How slugs are generated:</strong> The photo title (from EXIF data or filename) is converted to lowercase, spaces become hyphens, and special characters are removed. Example: "Rosette Nebula (NGC 2237)" becomes <code>rosette-nebula-ngc-2237</code>. If two photos have the same title, a number is appended: <code>rosette-nebula-2</code>.
+    </div>
+
+  </div>
+</body>
+</html>

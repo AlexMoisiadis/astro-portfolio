@@ -2,12 +2,24 @@ import Image from 'next/image';
 import BackButton from '@/components/BackButton';
 import TechPanel from '@/components/TechPanel';
 import { getBaseUrl } from '@/lib/get-base-url';
-import { pickDisplayTitle, stripExtension } from '@/lib/strings'; // <-- added
+import { pickDisplayTitle, stripExtension } from '@/lib/strings';
 import type { PhotoMeta } from '@/types/gallery.types';
 
-async function getMeta(id: string): Promise<PhotoMeta | null> {
+/** Resolve a slug (e.g. "southern-pleiades") to an Immich asset UUID. */
+async function resolveSlug(slug: string): Promise<string | null> {
   const base = await getBaseUrl();
-  const res = await fetch(`${base}/api/photo/${id}/metadata`, {
+  const res = await fetch(
+    `${base}/api/portfolio/lookup?slug=${encodeURIComponent(slug)}`,
+    { cache: 'no-store' },
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as { id?: string };
+  return data.id ?? null;
+}
+
+async function getMeta(assetId: string): Promise<PhotoMeta | null> {
+  const base = await getBaseUrl();
+  const res = await fetch(`${base}/api/photo/${assetId}/metadata`, {
     cache: 'no-store',
   });
   if (!res.ok) return null;
@@ -19,8 +31,12 @@ export default async function PhotoPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  const meta = await getMeta(id);
+  const { id: slugOrId } = await params;
+
+  // Try to resolve as slug first; if that fails, treat as a UUID for backwards compat
+  const assetId = (await resolveSlug(slugOrId)) ?? slugOrId;
+  const slug = slugOrId; // use the slug for client-facing URLs
+  const meta = await getMeta(assetId);
 
   if (!meta) {
     return (
@@ -66,7 +82,7 @@ export default async function PhotoPage({
         <div className="lg:col-span-8">
           <div className="overflow-hidden rounded-lg bg-neutral-900 shadow-2xl shadow-black/50">
             <Image
-              src={`/api/image/${id}/preview`}
+              src={`/api/image/by-slug/${slug}/preview`}
               alt={displayTitle}
               width={meta.width ?? 2048}
               height={meta.height ?? 1365}
@@ -99,7 +115,7 @@ export default async function PhotoPage({
             {/* Tech Panel */}
             <TechPanel
               tech={{
-                title: displayTitle, // <-- use normalized title here too
+                title: displayTitle,
                 description: meta.description,
                 camera: meta.camera,
                 lens: meta.lens,
@@ -115,7 +131,7 @@ export default async function PhotoPage({
 
             {/* Download button */}
             <a
-              href={`/api/image/${id}/original`}
+              href={`/api/image/by-slug/${slug}/original`}
               download
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-neutral-200 transition-colors hover:bg-white/10 hover:text-white"
             >

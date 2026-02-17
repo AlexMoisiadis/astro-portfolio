@@ -9,7 +9,7 @@ import type {
 } from '@/types/immich.types';
 import type { GalleryItem } from '@/types/gallery.types';
 import type { PortfolioSearchResponse } from './route.types';
-import { pickDisplayTitle } from '@/lib/strings';  // <-- import
+import { pickDisplayTitle, toSlug } from '@/lib/strings';
 
 export async function GET() {
     try {
@@ -44,28 +44,40 @@ export async function GET() {
                 ? (result as ImmichSearchArrayShape).assets
                 : (result as ImmichSearchObjectShape).assets?.items;
 
+        // Build items and assign unique slugs (append -2, -3, … on duplicates)
+        const slugCounts = new Map<string, number>();
+
         const items: GalleryItem[] = (assets ?? []).map((asset: ImmichAsset) => {
             const exif = asset.exifInfo ?? {};
             const width = exif.imageWidth ?? undefined;
             const height = exif.imageHeight ?? undefined;
 
+            const title = pickDisplayTitle(exif.imageName, asset.originalFileName, 'Untitled');
+
+            // Generate a unique slug from the title (or a fallback from the ID)
+            const baseSlug = toSlug(title ?? '') || `photo-${asset.id.slice(0, 8)}`;
+            const count = (slugCounts.get(baseSlug) ?? 0) + 1;
+            slugCounts.set(baseSlug, count);
+            const slug = count === 1 ? baseSlug : `${baseSlug}-${count}`;
+
             return {
                 id: asset.id,
+                slug,
                 width: typeof width === 'number' ? width : undefined,
                 height: typeof height === 'number' ? height : undefined,
                 capturedAt: asset.fileCreatedAt ?? undefined,
 
                 // Title: EXIF first, otherwise filename without extension
-                title: pickDisplayTitle(exif.imageName, asset.originalFileName, 'Untitled'),
+                title,
 
                 camera: exif.cameraModel ?? undefined,
                 focalLength: typeof exif.focalLength === 'number' ? exif.focalLength : undefined,
                 exposureTime: exif.exposureTime ?? undefined,
                 iso: typeof exif.iso === 'number' ? exif.iso : undefined,
 
-                // Proxy endpoints so the browser doesn’t need the API key
-                thumbUrl: `/api/image/${asset.id}/thumbnail`,
-                originalUrl: `/api/image/${asset.id}/original`,
+                // Slug-based proxy endpoints — no UUID exposed to the browser
+                thumbUrl: `/api/image/by-slug/${slug}/thumbnail`,
+                originalUrl: `/api/image/by-slug/${slug}/original`,
             };
         });
 

@@ -10,7 +10,7 @@ export default function Gallery({ items }: { items: GalleryItem[] }) {
       {items.map((p) => (
         <li key={p.id} className="group">
           <Link
-            href={`/photo/${p.id}`}
+            href={`/photo/${p.slug}`}
             className="block overflow-hidden rounded-lg bg-neutral-900 transition-shadow duration-300 hover:shadow-lg hover:shadow-indigo-500/10"
           >
             {/* Image container with aspect ratio */}
