@@ -8,7 +8,7 @@ const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_API = 60;           // max requests per window for /api/*
 const RATE_LIMIT_PAGES = 200;        // max requests per window for pages
 
-type Bucket = { tokens: number; lastRefill: number };
+type Bucket = { tokens: number; lastRefill: number; blocked: number };
 const buckets = new Map<string, Bucket>();
 
 // Periodically clean up stale buckets (every 5 minutes)
@@ -24,6 +24,15 @@ function cleanupBuckets() {
     }
 }
 
+function getRemainingTokens(ip: string, limit: number): number {
+    const key = `${ip}:${limit}`;
+    const bucket = buckets.get(key);
+    if (!bucket) return limit;
+    const now = Date.now();
+    if (now - bucket.lastRefill >= RATE_LIMIT_WINDOW_MS) return limit;
+    return bucket.tokens;
+}
+
 function isRateLimited(ip: string, limit: number): boolean {
     cleanupBuckets();
     const now = Date.now();
@@ -31,7 +40,7 @@ function isRateLimited(ip: string, limit: number): boolean {
     let bucket = buckets.get(key);
 
     if (!bucket) {
-        bucket = { tokens: limit - 1, lastRefill: now };
+        bucket = { tokens: limit - 1, lastRefill: now, blocked: 0 };
         buckets.set(key, bucket);
         return false;
     }
@@ -41,6 +50,7 @@ function isRateLimited(ip: string, limit: number): boolean {
     if (elapsed >= RATE_LIMIT_WINDOW_MS) {
         bucket.tokens = limit - 1;
         bucket.lastRefill = now;
+        bucket.blocked = 0;
         return false;
     }
 
@@ -49,7 +59,66 @@ function isRateLimited(ip: string, limit: number): boolean {
         return false;
     }
 
+    bucket.blocked++;
     return true; // no tokens left
+}
+
+function getBlockedCount(ip: string, limit: number): number {
+    const key = `${ip}:${limit}`;
+    return buckets.get(key)?.blocked ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// Logging helpers
+// ---------------------------------------------------------------------------
+function timestamp(): string {
+    return new Date().toISOString();
+}
+
+/** Compact structured log line visible in `docker compose logs -f` */
+function logRequest(
+    level: 'INFO' | 'WARN' | 'BLOCK',
+    method: string,
+    path: string,
+    status: number,
+    ip: string,
+    durationMs: number,
+    extra?: string,
+) {
+    const parts = [
+        `[${timestamp()}]`,
+        `[${level.padEnd(5)}]`,
+        `${method.padEnd(4)}`,
+        `${status}`,
+        `${path}`,
+        `${durationMs}ms`,
+        `ip=${ip}`,
+    ];
+    if (extra) parts.push(extra);
+    console.log(parts.join(' '));
+}
+
+// ---------------------------------------------------------------------------
+// Suspicious pattern detection
+// ---------------------------------------------------------------------------
+const SUSPICIOUS_PATTERNS = [
+    /\.\.\/|\.\.\\/, // path traversal
+    /\.(php|asp|aspx|jsp|cgi|env|git|sql|bak|old|orig|config|ini|log)$/i,
+    /wp-(admin|login|content|includes)/i, // WordPress probes
+    /(xmlrpc|eval-stdin|shell|cmd|exec|phpinfo|phpmyadmin)/i,
+    /<script|javascript:|data:text\/html/i, // XSS attempts
+    /\x00/, // null byte injection
+];
+
+function isSuspicious(path: string, userAgent: string, ip: string): string | null {
+    for (const pattern of SUSPICIOUS_PATTERNS) {
+        if (pattern.test(path)) return `suspicious_path:${pattern.source}`;
+    }
+    // Blank or missing user-agent is common for bots/scanners,
+    // but exempt internal/localhost requests (server calling itself).
+    const isInternal = ip === '::1' || ip === '127.0.0.1' || ip.endsWith('::ffff:127.0.0.1');
+    if (!isInternal && (!userAgent || userAgent.length < 5)) return 'no_user_agent';
+    return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,16 +148,35 @@ const SECURITY_HEADERS: Record<string, string> = {
 // Middleware
 // ---------------------------------------------------------------------------
 export function middleware(request: NextRequest) {
+    const start = Date.now();
     const { pathname } = request.nextUrl;
+    const method = request.method;
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
         ?? request.headers.get('x-real-ip')
         ?? 'unknown';
+    const userAgent = request.headers.get('user-agent') ?? '';
 
-    // Rate limiting
+    // --- Suspicious request detection ---
+    const suspiciousReason = isSuspicious(pathname, userAgent, ip);
+    if (suspiciousReason) {
+        const duration = Date.now() - start;
+        logRequest('WARN', method, pathname, 403, ip, duration,
+            `reason=${suspiciousReason} ua="${userAgent.slice(0, 80)}"`);
+        return new NextResponse('Forbidden', {
+            status: 403,
+            headers: SECURITY_HEADERS,
+        });
+    }
+
+    // --- Rate limiting ---
     const isApi = pathname.startsWith('/api/');
     const limit = isApi ? RATE_LIMIT_API : RATE_LIMIT_PAGES;
 
     if (isRateLimited(ip, limit)) {
+        const duration = Date.now() - start;
+        const blockedCount = getBlockedCount(ip, limit);
+        logRequest('BLOCK', method, pathname, 429, ip, duration,
+            `rate_limited blocked_count=${blockedCount}`);
         return new NextResponse('Too Many Requests', {
             status: 429,
             headers: {
@@ -98,11 +186,17 @@ export function middleware(request: NextRequest) {
         });
     }
 
-    // Continue with security headers
+    // --- Continue with security headers ---
     const response = NextResponse.next();
     for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
         response.headers.set(key, value);
     }
+
+    // --- Log the request ---
+    const duration = Date.now() - start;
+    const remaining = getRemainingTokens(ip, limit);
+    logRequest('INFO', method, pathname, 200, ip, duration,
+        `tokens=${remaining}/${limit}`);
 
     return response;
 }
