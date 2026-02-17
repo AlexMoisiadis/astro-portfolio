@@ -1,0 +1,18 @@
+services:
+  astro-portfolio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Build-time: needed for Next.js image remotePatterns config.
+        # Set to your Immich URL so the image optimizer allows it.
+        IMMICH_BASE_URL: ${IMMICH_BASE_URL:-https://photos.moisiadis.com}
+    container_name: astro-portfolio
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    restart: unless-stopped
+    # If Immich runs on the same Docker host (localhost:2082), uncomment:
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"

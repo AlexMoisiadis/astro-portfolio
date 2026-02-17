@@ -17,6 +17,7 @@ if (process.env.IMMICH_BASE_URL) {
 }
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   poweredByHeader: false,
   images: {
     remotePatterns,
