@@ -115,8 +115,14 @@ function isSuspicious(path: string, userAgent: string, ip: string): string | nul
         if (pattern.test(path)) return `suspicious_path:${pattern.source}`;
     }
     // Blank or missing user-agent is common for bots/scanners,
-    // but exempt internal/localhost requests (server calling itself).
-    const isInternal = ip === '::1' || ip === '127.0.0.1' || ip.endsWith('::ffff:127.0.0.1');
+    // but exempt internal/localhost/Docker-network requests (server calling itself).
+    const isInternal = ip === '::1'
+        || ip === '127.0.0.1'
+        || ip.endsWith('::ffff:127.0.0.1')
+        || ip.startsWith('10.')
+        || ip.startsWith('172.16.') || ip.startsWith('172.17.') || ip.startsWith('172.18.')
+        || ip.startsWith('172.19.') || ip.startsWith('172.2') || ip.startsWith('172.3')
+        || ip.startsWith('192.168.');
     if (!isInternal && (!userAgent || userAgent.length < 5)) return 'no_user_agent';
     return null;
 }
