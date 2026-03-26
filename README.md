@@ -210,7 +210,7 @@ This interactive diagram shows the full request flow from browser â†’ Next.js â†
 |----------|----------|-------------|---------|
 | `NEXT_PUBLIC_BASE_URL` | Yes | Public URL of the site | `https://astro.yourdomain.com` |
 | `IMMICH_BASE_URL` | Yes | Immich server URL | `https://photos.yourdomain.com` or `http://host.docker.internal:2082` |
-| `IMMICH_API_KEY` | Yes | Immich API key | `o2IYPIMFvc0n...` |
+| `IMMICH_API_KEY` | Yes | Immich API key | `your-api-key-here` |
 | `IMMICH_PORTFOLIO_ALBUM_ID` | No* | UUID of the portfolio album | `140bc00a-f4e7-...` |
 | `IMMICH_PORTFOLIO_ALBUM_NAME` | No* | Name of the portfolio album | `Portfolio` |
 | `DISABLE_CACHE` | No | Set `true` to disable server caching | `false` |
