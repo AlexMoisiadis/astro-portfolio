@@ -17,7 +17,7 @@ COPY . .
 
 # Build-time env vars needed by next.config.ts (IMMICH_BASE_URL for remotePatterns)
 # These are baked into the build; runtime vars override via .env.production
-ARG IMMICH_BASE_URL=https://photos.moisiadis.com
+ARG IMMICH_BASE_URL=https://photos.yourdomain.com
 ENV IMMICH_BASE_URL=${IMMICH_BASE_URL}
 
 # Disable Next.js telemetry during build

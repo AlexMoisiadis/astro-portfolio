@@ -6,7 +6,7 @@ services:
       args:
         # Build-time: needed for Next.js image remotePatterns config.
         # Set to your Immich URL so the image optimizer allows it.
-        IMMICH_BASE_URL: ${IMMICH_BASE_URL:-https://photos.moisiadis.com}
+        IMMICH_BASE_URL: ${IMMICH_BASE_URL:-https://photos.yourdomain.com}
     container_name: astro-portfolio
     ports:
       - "3000:3000"
