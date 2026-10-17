@@ -59,6 +59,12 @@ const state: State = (g.__photoSource ??= { downUntil: {}, snapping: false });
 const snapshotDir = () => process.env.SNAPSHOT_DIR || path.join(process.cwd(), '.portfolio-snapshot');
 const curatedDir = () => process.env.FALLBACK_PHOTOS_DIR || path.join(process.cwd(), 'fallback-photos');
 
+/** Positive number from env, or Infinity (no cap) when unset/invalid. */
+const capFromEnv = (name: string) => {
+    const n = Number(process.env[name]);
+    return n > 0 ? n : Infinity;
+};
+
 /** "name", "name-2", "name-3", … */
 function uniqueSlug(base: string, counts: Map<string, number>): string {
     const count = (counts.get(base) ?? 0) + 1;
@@ -135,22 +141,34 @@ async function writeSnapshot(items: SourceItem[], t: ImmichTarget) {
         const dir = snapshotDir();
         await fs.mkdir(dir, { recursive: true });
 
+        // Newest capture date first (undated last), keeping photos until a cap is hit.
         // Only photos with both images on disk make it into the listing.
+        const maxPhotos = capFromEnv('SNAPSHOT_MAX_PHOTOS');
+        const maxBytes = capFromEnv('SNAPSHOT_MAX_MB') * 1024 * 1024;
+        const newestFirst = [...items].sort((a, b) => (b.capturedAt ?? '').localeCompare(a.capturedAt ?? ''));
         const complete: SourceItem[] = [];
-        for (const it of items) {
+        let bytes = 0;
+        for (const it of newestFirst) {
+            if (complete.length >= maxPhotos) break;
             let ok = true;
+            let size = 0;
             for (const type of ['thumbnail', 'preview'] as const) {
                 const file = snapshotFile(it.slug, type);
-                if (await fs.access(file).then(() => true, () => false)) continue;
-                const res = await immichFetch(immichImagePath(it.ref, type), {}, CACHE_REVALIDATE_IMAGE, t);
-                if (res.ok) {
+                if (!(await fs.access(file).then(() => true, () => false))) {
+                    const res = await immichFetch(immichImagePath(it.ref, type), {}, CACHE_REVALIDATE_IMAGE, t);
+                    if (!res.ok) {
+                        ok = false;
+                        console.warn(`[photo-source] snapshot: ${it.slug} ${type} got HTTP ${res.status}`);
+                        break;
+                    }
                     await fs.writeFile(file, new Uint8Array(await res.arrayBuffer()));
-                } else {
-                    ok = false;
-                    console.warn(`[photo-source] snapshot: ${it.slug} ${type} got HTTP ${res.status}`);
                 }
+                size += (await fs.stat(file)).size;
             }
-            if (ok) complete.push(it);
+            if (!ok) continue;
+            if (bytes + size > maxBytes) break; // files of photos left out are pruned below
+            bytes += size;
+            complete.push(it);
         }
         if (complete.length === 0) return; // keep any previous good snapshot
 
@@ -219,11 +237,13 @@ async function load(): Promise<Portfolio> {
         }
     }
 
-    const snapshot = await readSnapshot();
-    if (snapshot) return { source: 'snapshot', items: snapshot };
-
-    const curated = await readCurated();
-    if (curated.length) return { source: 'curated', items: curated };
+    // Local fallback = snapshot + your folder, so adding a photo to either shows up.
+    // A folder file whose slug is already in the snapshot is assumed to be the same photo.
+    const snapshot = (await readSnapshot()) ?? [];
+    const have = new Set(snapshot.map(i => i.slug));
+    const curated = (await readCurated()).filter(i => !have.has(i.slug));
+    const items = [...snapshot, ...curated];
+    if (items.length) return { source: snapshot.length ? 'snapshot' : 'curated', items };
 
     return { source: 'none', items: [] };
 }

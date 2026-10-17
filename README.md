@@ -219,7 +219,9 @@ This interactive diagram shows the full request flow from browser â†’ Next.js â†
 | `IMMICH_BACKUP_API_KEY` | No | API key for the backup (defaults to the primary's) | |
 | `IMMICH_BACKUP_PORTFOLIO_ALBUM_ID` / `_NAME` | No | Album on the backup (name defaults to the primary's) | `Portfolio` |
 | `SNAPSHOT_DIR` | No | Where the automatic snapshot is saved | `./.portfolio-snapshot` |
-| `FALLBACK_PHOTOS_DIR` | No | Folder of your own JPG/PNG/WEBP files | `./fallback-photos` |
+| `SNAPSHOT_MAX_PHOTOS` | No | Keep at most this many photos in the snapshot (newest capture date first) | `5` |
+| `SNAPSHOT_MAX_MB` | No | Cap the snapshot's disk use in MB (newest photos kept first) | `50` |
+| `FALLBACK_PHOTOS_DIR` | No | Folder of your own JPG/PNG/WEBP files, shown together with the snapshot in fallback mode | `./fallback-photos` |
 
 \* Provide at least one of `IMMICH_PORTFOLIO_ALBUM_ID` or `IMMICH_PORTFOLIO_ALBUM_NAME`.
 
@@ -231,8 +233,8 @@ The site keeps working when Immich is down. Sources are tried in this order:
 
 1. **Primary Immich**
 2. **Backup Immich** (optional): set `IMMICH_BACKUP_*` before planned maintenance
-3. **Local snapshot**: saved automatically (listing, EXIF, thumbnails, previews) whenever Immich answers. Originals are not saved, so "Download Original" serves the preview in this mode
-4. **Fallback folder**: put JPG/PNG/WEBP files in `fallback-photos/`. Used only if there is no snapshot yet; shows titles only
+3. **Local snapshot**: saved automatically (listing, EXIF, thumbnails, previews) whenever Immich answers, newest photos first. `SNAPSHOT_MAX_PHOTOS` and `SNAPSHOT_MAX_MB` cap it. Originals are not saved, so "Download Original" serves the preview in this mode
+4. **Fallback folder**: put JPG/PNG/WEBP files in `fallback-photos/`. When Immich is down these are shown together with the snapshot (titles only, a file whose title matches a snapshot photo is skipped), so you never need to copy photos between the two
 
 With Docker Compose, the snapshot lives in the `portfolio-snapshot` volume and `./fallback-photos` is mounted read-only. The log line `[photo-source] serving from: <source>` shows which one is live. A failed server is skipped for 60 seconds. To test locally, set `DISABLE_CACHE=true`, otherwise Next's fetch cache serves a stale Immich listing.
 

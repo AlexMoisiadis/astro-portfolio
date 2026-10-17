@@ -282,8 +282,8 @@
       <tbody>
         <tr><td>1</td><td>Primary Immich</td><td>Normal operation. A failed server is skipped for 60 seconds.</td></tr>
         <tr><td>2</td><td>Backup Immich</td><td>Optional (<code>IMMICH_BACKUP_*</code>). Point it at a second server during planned maintenance.</td></tr>
-        <tr><td>3</td><td>Local snapshot</td><td>Written automatically whenever Immich answers: listing, EXIF metadata, thumbnails and previews. Originals are not saved, so downloads serve the preview.</td></tr>
-        <tr><td>4</td><td>Fallback folder</td><td>Your own JPG/PNG/WEBP files. Used only when no snapshot exists yet. Title only, no EXIF.</td></tr>
+        <tr><td>3</td><td>Local snapshot</td><td>Written automatically whenever Immich answers: listing, EXIF metadata, thumbnails and previews, newest first. Optional caps: <code>SNAPSHOT_MAX_PHOTOS</code>, <code>SNAPSHOT_MAX_MB</code>. Originals are not saved, so downloads serve the preview.</td></tr>
+        <tr><td>4</td><td>Fallback folder</td><td>Your own JPG/PNG/WEBP files. Shown together with the snapshot in fallback mode (same-title files are skipped). Title only, no EXIF.</td></tr>
       </tbody>
     </table>
 
