@@ -12,6 +12,7 @@ A self-hosted astrophotography portfolio website powered by [Immich](https://imm
 - **Photo Detail Pages** — Full EXIF metadata display (camera, lens, exposure, ISO, sensor temp, etc.)
 - **Human-Readable URLs** — `/photo/rosette-nebula` instead of `/photo/c3629bd3-6919-...`
 - **No UUID Leakage** — Immich asset IDs are never exposed to the browser
+- **Failover** — If Immich is down, the site switches to a backup Immich, then an auto-saved local snapshot, then your own fallback photos
 - **Security Hardened** — CSP headers, HSTS, rate limiting, input validation
 - **Retry Logic** — Automatic retry with exponential backoff for transient Immich errors
 - **Server-Side Caching** — Configurable cache durations to reduce Immich API load
@@ -157,18 +158,18 @@ Open [http://localhost:3000](http://localhost:3000) in your browser. The page au
 │   ├── photo/[id]/page.tsx               # Photo detail page
 │   ├── about/page.tsx                    # About page
 │   └── api/
-│       ├── portfolio/route.ts            # Returns all gallery items with slugs
-│       ├── portfolio/lookup/route.ts     # Resolves slug → Immich UUID
+│       ├── portfolio/route.ts            # Returns all gallery items with slugs (no asset ids)
 │       ├── image/by-slug/[slug]/[type]/  # Slug-based image proxy (thumbnail/preview/original)
-│       ├── image/[id]/*/                 # UUID-based image proxy (internal/legacy)
-│       └── photo/[id]/metadata/          # EXIF metadata endpoint
+│       └── image/[id]/*/                 # UUID-based image proxy (internal/legacy)
 ├── components/                           # React components (Gallery, TechPanel, etc.)
 ├── lib/
+│   ├── photo-source.ts                   # Picks the photo source (Immich → backup → snapshot → fallback folder)
 │   ├── immich.ts                         # Immich API helpers with retry logic
 │   ├── fetch-with-retry.ts              # Generic fetch with exponential backoff
 │   ├── constants.ts                      # Cache duration constants
 │   └── strings.ts                        # Title formatting & slug generation
 ├── middleware.ts                          # Security headers & rate limiting
+├── fallback-photos/                      # Your last-resort photos (contents not committed)
 ├── Dockerfile                            # Multi-stage production build
 ├── docker-compose.yml                    # Docker Compose configuration
 └── .env.example                          # Environment variable template
@@ -214,8 +215,26 @@ This interactive diagram shows the full request flow from browser → Next.js �
 | `IMMICH_PORTFOLIO_ALBUM_ID` | No* | UUID of the portfolio album | `140bc00a-f4e7-...` |
 | `IMMICH_PORTFOLIO_ALBUM_NAME` | No* | Name of the portfolio album | `Portfolio` |
 | `DISABLE_CACHE` | No | Set `true` to disable server caching | `false` |
+| `IMMICH_BACKUP_BASE_URL` | No | Backup Immich server, tried when the primary is down | `https://photos-backup.yourdomain.com` |
+| `IMMICH_BACKUP_API_KEY` | No | API key for the backup (defaults to the primary's) | |
+| `IMMICH_BACKUP_PORTFOLIO_ALBUM_ID` / `_NAME` | No | Album on the backup (name defaults to the primary's) | `Portfolio` |
+| `SNAPSHOT_DIR` | No | Where the automatic snapshot is saved | `./.portfolio-snapshot` |
+| `FALLBACK_PHOTOS_DIR` | No | Folder of your own JPG/PNG/WEBP files | `./fallback-photos` |
 
 \* Provide at least one of `IMMICH_PORTFOLIO_ALBUM_ID` or `IMMICH_PORTFOLIO_ALBUM_NAME`.
+
+---
+
+## 🛟 Failover
+
+The site keeps working when Immich is down. Sources are tried in this order:
+
+1. **Primary Immich**
+2. **Backup Immich** (optional): set `IMMICH_BACKUP_*` before planned maintenance
+3. **Local snapshot**: saved automatically (listing, EXIF, thumbnails, previews) whenever Immich answers. Originals are not saved, so "Download Original" serves the preview in this mode
+4. **Fallback folder**: put JPG/PNG/WEBP files in `fallback-photos/`. Used only if there is no snapshot yet; shows titles only
+
+With Docker Compose, the snapshot lives in the `portfolio-snapshot` volume and `./fallback-photos` is mounted read-only. The log line `[photo-source] serving from: <source>` shows which one is live. A failed server is skipped for 60 seconds. To test locally, set `DISABLE_CACHE=true`, otherwise Next's fetch cache serves a stale Immich listing.
 
 ---
 
