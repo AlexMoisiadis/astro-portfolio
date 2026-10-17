@@ -1,22 +1,8 @@
 // app/api/image/by-slug/[slug]/[type]/route.ts
 import type { NextRequest } from 'next/server';
-import { immichFetch } from '@/lib/immich';
-import { CACHE_REVALIDATE_IMAGE } from '@/lib/constants';
-import { getBaseUrl } from '@/lib/get-base-url';
+import { getImage, resolveSlug, type ImageType } from '@/lib/photo-source';
 
-const VALID_TYPES = new Set(['thumbnail', 'preview', 'original']);
-
-/** Resolve a slug to an Immich asset UUID via the portfolio API. */
-async function resolveSlug(slug: string): Promise<string | null> {
-    const base = await getBaseUrl();
-    const res = await fetch(
-        `${base}/api/portfolio/lookup?slug=${encodeURIComponent(slug)}`,
-        { cache: 'no-store' },
-    );
-    if (!res.ok) return null;
-    const data = (await res.json()) as { id?: string };
-    return data.id ?? null;
-}
+const VALID_TYPES = new Set<string>(['thumbnail', 'preview', 'original']);
 
 export async function GET(
     _req: NextRequest,
@@ -28,26 +14,14 @@ export async function GET(
         return new Response('Bad request', { status: 400 });
     }
 
-    const assetId = await resolveSlug(slug);
-    if (!assetId) {
+    const item = await resolveSlug(slug);
+    if (!item) {
         return new Response('Not found', { status: 404 });
     }
 
-    // Build the Immich API path based on type
-    let immichPath: string;
-    if (type === 'preview') {
-        immichPath = `/assets/${encodeURIComponent(assetId)}/thumbnail?size=preview`;
-    } else if (type === 'thumbnail') {
-        immichPath = `/assets/${encodeURIComponent(assetId)}/thumbnail`;
-    } else {
-        // original
-        immichPath = `/assets/${encodeURIComponent(assetId)}/original`;
-    }
-
-    const res = await immichFetch(immichPath, {}, CACHE_REVALIDATE_IMAGE);
-
-    if (!res.ok || !res.body) {
-        return new Response('Upstream error', { status: res.status || 502 });
+    const res = await getImage(item, type as ImageType);
+    if (!res?.body) {
+        return new Response('Upstream error', { status: 502 });
     }
 
     const defaultMaxAge = type === 'preview' ? 300 : 60;

@@ -41,6 +41,9 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
+# Snapshot dir must exist before chown so a mounted volume inherits nextjs ownership
+RUN mkdir -p /app/.portfolio-snapshot
+
 # Set ownership
 RUN chown -R nextjs:nodejs /app
 

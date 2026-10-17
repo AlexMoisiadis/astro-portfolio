@@ -8,7 +8,7 @@ export default function Gallery({ items }: { items: GalleryItem[] }) {
   return (
     <ul className="stagger-children grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
       {items.map((p) => (
-        <li key={p.id} className="group">
+        <li key={p.slug} className="group">
           <Link
             href={`/photo/${p.slug}`}
             className="block overflow-hidden rounded-lg bg-neutral-900 transition-shadow duration-300 hover:shadow-lg hover:shadow-indigo-500/10"
