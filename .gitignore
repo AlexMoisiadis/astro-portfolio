@@ -37,6 +37,10 @@ yarn-error.log*
 # failover snapshot
 /.portfolio-snapshot/
 
+# your own last-resort photos live on the host, not in git (keep the folder itself)
+/fallback-photos/*
+!/fallback-photos/.gitkeep
+
 # Claude
 CLAUDE.md
 
