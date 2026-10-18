@@ -80,13 +80,13 @@
 
         <div class="arrow-group">
           <div class="arrow">→</div>
-          <div class="arrow-label">Lookup: slug → UUID</div>
+          <div class="arrow-label">In-process: slug → asset</div>
         </div>
 
         <div class="box api">
-          <div class="label">API Route</div>
-          <div class="name">Lookup</div>
-          <div class="detail">/api/portfolio/lookup</div>
+          <div class="label">Server module</div>
+          <div class="name">Photo Source</div>
+          <div class="detail">lib/photo-source.ts</div>
         </div>
 
         <div class="arrow-group">
@@ -128,18 +128,18 @@
       </div>
 
       <!-- Step 2 -->
-      <h3 style="color: #f59e0b; margin-top: 24px; margin-bottom: 12px;">Step 2: Server resolves slug → UUID (hidden from browser)</h3>
+      <h3 style="color: #f59e0b; margin-top: 24px; margin-bottom: 12px;">Step 2: Server resolves slug → asset (hidden from browser)</h3>
       <div class="flow">
         <div class="box nextjs">
           <div class="name">Photo Page</div>
         </div>
         <div class="arrow-group">
           <div class="arrow">→</div>
-          <div class="arrow-label"><code>?slug=rosette-nebula</code></div>
+          <div class="arrow-label"><code>resolveSlug("rosette-nebula")</code></div>
         </div>
         <div class="box api">
-          <div class="name">Lookup API</div>
-          <div class="detail">Returns: UUID</div>
+          <div class="name">Photo Source</div>
+          <div class="detail">Returns: item + metadata (no HTTP hop)</div>
         </div>
       </div>
 
@@ -247,11 +247,7 @@
       <tbody>
         <tr>
           <td><code>/api/portfolio</code></td>
-          <td>Returns all photos with slugs, titles, and slug-based image URLs</td>
-        </tr>
-        <tr>
-          <td><code>/api/portfolio/lookup?slug=...</code></td>
-          <td>Converts a slug → Immich UUID (server-side only)</td>
+          <td>Returns all photos with slugs, titles, and slug-based image URLs (no asset ids). 502 only if every photo source fails</td>
         </tr>
         <tr>
           <td><code>/api/image/by-slug/[slug]/thumbnail</code></td>
@@ -265,10 +261,29 @@
           <td><code>/api/image/by-slug/[slug]/original</code></td>
           <td>Returns original full-res image (for download)</td>
         </tr>
+      </tbody>
+    </table>
+
+    <p>The photo page and the image routes call <code>resolveSlug()</code> in <code>lib/photo-source.ts</code> directly. There is no public slug-to-UUID endpoint and no separate metadata endpoint; EXIF data comes from the same in-process item.</p>
+
+    <!-- ============================================================ -->
+    <div class="divider"></div>
+    <h2>5. Failover: Where Photos Come From</h2>
+    <p><code>lib/photo-source.ts</code> tries each source in order and uses the first one that answers:</p>
+
+    <table>
+      <thead>
         <tr>
-          <td><code>/api/photo/[uuid]/metadata</code></td>
-          <td>Returns EXIF/camera data (called server-side by photo page)</td>
+          <th>#</th>
+          <th>Source</th>
+          <th>Notes</th>
         </tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>Primary Immich</td><td>Normal operation. A failed server is skipped for 60 seconds.</td></tr>
+        <tr><td>2</td><td>Backup Immich</td><td>Optional (<code>IMMICH_BACKUP_*</code>). Point it at a second server during planned maintenance.</td></tr>
+        <tr><td>3</td><td>Local snapshot</td><td>Written automatically whenever Immich answers: listing, EXIF metadata, thumbnails and previews, newest first. Optional caps: <code>SNAPSHOT_MAX_PHOTOS</code>, <code>SNAPSHOT_MAX_MB</code>. Originals are not saved, so downloads serve the preview.</td></tr>
+        <tr><td>4</td><td>Fallback folder</td><td>Your own JPG/PNG/WEBP files. Shown together with the snapshot in fallback mode (same-title files are skipped). Title only, no EXIF.</td></tr>
       </tbody>
     </table>
 

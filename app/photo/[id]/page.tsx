@@ -1,42 +1,17 @@
 import Image from 'next/image';
 import BackButton from '@/components/BackButton';
 import TechPanel from '@/components/TechPanel';
-import { getBaseUrl } from '@/lib/get-base-url';
-import { pickDisplayTitle, stripExtension } from '@/lib/strings';
-import type { PhotoMeta } from '@/types/gallery.types';
+import { resolveSlug } from '@/lib/photo-source';
 
-/** Resolve a slug (e.g. "southern-pleiades") to an Immich asset UUID. */
-async function resolveSlug(slug: string): Promise<string | null> {
-  const base = await getBaseUrl();
-  const res = await fetch(
-    `${base}/api/portfolio/lookup?slug=${encodeURIComponent(slug)}`,
-    { cache: 'no-store' },
-  );
-  if (!res.ok) return null;
-  const data = (await res.json()) as { id?: string };
-  return data.id ?? null;
-}
-
-async function getMeta(assetId: string): Promise<PhotoMeta | null> {
-  const base = await getBaseUrl();
-  const res = await fetch(`${base}/api/photo/${assetId}/metadata`, {
-    cache: 'no-store',
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
+export const dynamic = 'force-dynamic';
 
 export default async function PhotoPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id: slugOrId } = await params;
-
-  // Try to resolve as slug first; if that fails, treat as a UUID for backwards compat
-  const assetId = (await resolveSlug(slugOrId)) ?? slugOrId;
-  const slug = slugOrId; // use the slug for client-facing URLs
-  const meta = await getMeta(assetId);
+  const { id: slug } = await params;
+  const meta = await resolveSlug(slug);
 
   if (!meta) {
     return (
@@ -64,14 +39,7 @@ export default async function PhotoPage({
     );
   }
 
-  // --- Normalize the title for display: EXIF/metadata title -> filename (no ext) -> 'Untitled'
-  const filenameFromUrl =
-    typeof meta.originalUrl === 'string'
-      ? meta.originalUrl.split('/').pop()
-      : undefined;
-  const displayTitle =
-    pickDisplayTitle(meta.title, stripExtension(filenameFromUrl ?? undefined), 'Untitled') ??
-    'Untitled';
+  const displayTitle = meta.title ?? 'Untitled';
 
   return (
     <div className="animate-fade-in">
@@ -123,9 +91,6 @@ export default async function PhotoPage({
                 exposureTime: meta.exposureTime,
                 iso: meta.iso,
                 sensorTemp: meta.sensorTemp,
-                integration: meta.integration,
-                mount: meta.mount,
-                filters: meta.filters,
               }}
             />
 

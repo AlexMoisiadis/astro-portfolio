@@ -1,27 +1,13 @@
 import Gallery from '@/components/Gallery';
 import GallerySkeleton from '@/components/GallerySkeleton';
-import type { GalleryItem } from '@/types/gallery.types';
-import { getBaseUrl } from '@/lib/get-base-url';
+import { getPortfolio, toGalleryItem } from '@/lib/photo-source';
 import { Suspense } from 'react';
 
-async function getItems(): Promise<GalleryItem[]> {
-  try {
-    const base = await getBaseUrl();
-    const res = await fetch(`${base}/api/portfolio`, { cache: 'no-store' });
-    if (res.ok) {
-      const data = (await res.json()) as { items: GalleryItem[] };
-      return Array.isArray(data?.items) ? data.items : [];
-    }
-    console.error('GET /api/portfolio failed:', res.status);
-    return [];
-  } catch (err) {
-    console.error('GET /api/portfolio error:', err);
-    return [];
-  }
-}
+// Read photos per request; without this the gallery is frozen at build time.
+export const dynamic = 'force-dynamic';
 
 async function GallerySection() {
-  const items = await getItems();
+  const items = (await getPortfolio()).items.map(toGalleryItem);
 
   if (items.length === 0) {
     return (

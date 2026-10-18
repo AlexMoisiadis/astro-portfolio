@@ -13,6 +13,14 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    volumes:
+      # Auto-written copy of the portfolio, served when Immich is unreachable
+      - portfolio-snapshot:/app/.portfolio-snapshot
+      # Your own last-resort photos (JPG/PNG/WEBP), read-only
+      - ./fallback-photos:/app/fallback-photos:ro
     # If Immich runs on the same Docker host (localhost:2082), uncomment:
     # extra_hosts:
     #   - "host.docker.internal:host-gateway"
+
+volumes:
+  portfolio-snapshot:
